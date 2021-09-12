@@ -241,3 +241,7 @@ da_experiment <- purrr::map_dfr(1:100, function(seed) {
 
   return(metrics)
 }, .id = 'seed')
+
+# write da_metrics in a .csv file
+fs::dir_create('data')
+readr::write_csv(da_experiment, 'data/experiment.csv')
