@@ -2,6 +2,49 @@
 da_iris <- iris
 
 # implementing models ----------------------------------------------------------
+## Adaline
+### adaline model with sigmoid activation
+adaline <- function(formula, data, epochs = 500, lr = 0.05) {
+  ## response in dummy format
+  truth_form <- glue::glue('~ -1 + {all.vars(formula)[1]}')
+  truth <- model.matrix(as.formula(truth_form), data = data)
+  colnames(truth) <- stringr::str_remove(colnames(truth), all.vars(formula)[1])
+
+  # matrix of weights
+  W <- matrix(rnorm(ncol(truth) * ncol(data)), ncol = ncol(truth))
+
+  # double loop
+  ## iterating first on rw (rows) and then on ep (epochs)
+  for(ep in 1:epochs) {
+    for(rw in 1:nrow(data)) {
+      # data specification and prediction
+      X <- model.matrix(formula, data = data[rw,]) # [1 Var1 Var2 ...] (1 x (p+1))
+      Ui <- X %*% W # (1 x (p+1)) * ((p+1) x size) = (1 x size)
+      Yi <- 1/(1 + exp(-Ui)) # sigmoid activation
+
+      # error quantification
+      Ei <- truth[rw,] - Yi
+
+      # learning phase
+      W <- W + lr*(t(X)/as.numeric(X%*%t(X)))%*%Ei
+    }
+  }
+  # converting the function into a model like any other
+  # already implemented in R
+  model <- structure(list(W = W, formula = formula,
+                          labels = colnames(truth)), class = "adaline")
+
+  return(model)
+}
+### logistic perceptron predict function
+predict.adaline <- function(object, newdata) {
+  X <- model.matrix(object$formula, data = newdata) # [1 newdata]
+  Ui <- X %*% object$W
+  Yi <- 1/(1 + exp(-Ui)) # sigmoid activation
+  estimate <- object$labels[max.col(Yi)] # get labels of the largest activation
+  return(factor(estimate, levels = object$labels))
+}
+
 ## PL
 ### logistic perceptron model
 perceptron_log <- function(formula, data, epochs = 500, lr = 0.05, mom = 0.01) {
@@ -30,7 +73,7 @@ perceptron_log <- function(formula, data, epochs = 500, lr = 0.05, mom = 0.01) {
 
       # learning phase
       W_aux <- W
-      W <- W + lr*t(X)%*%DDi
+      W <- W + lr*t(X)%*%DDi + mom*(W - W_old)
       W_old <- W_aux
     }
   }
@@ -104,7 +147,7 @@ da_experiment <- purrr::map_dfr(1:3, function(seed) {
   da_test <- rsample::testing(da_split)
 
   ## apply models in train
-  mod_ada <- nnet::multinom(formula = Species ~ ., data = da_train, trace = FALSE)
+  mod_ada <- adaline(formula = Species ~ ., data = da_train)
   mod_pl <- perceptron_log(formula = Species ~ ., data = da_train)
   mod_lmq <- lmq(formula = Species ~ ., data = da_train)
   mod_mlp <- nnet::multinom(formula = Species ~ ., data = da_train, trace = FALSE)
