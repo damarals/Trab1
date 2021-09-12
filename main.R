@@ -216,9 +216,15 @@ get_metrics <- function(models, da_test, truth) {
 }
 
 # run experiment ---------------------------------------------------------------
+## settings for parallel processing (multiple iterations at the same time)
+globals <- list('da_iris' = da_iris, 'get_metrics' = get_metrics,
+                'adaline' = adaline, 'perceptron_log' = perceptron_log,
+                'lmq' = lmq, 'mlp' = mlp, 'predict.adaline' = predict.adaline,
+                'predict.pl' = predict.pl, 'predict.lmq' = predict.lmq,
+                'predict.mlp' = predict.mlp)
+future::plan(future::multisession, workers = 25) # 25 iterations at the same time
 ## loop 100x and assign results to `da_experiment`
-da_experiment <- purrr::map_dfr(1:100, function(seed) {
-  tictoc::tic() # time elapsed init
+da_experiment <- furrr::future_map_dfr(1:100, function(seed) {
   ## data split 80/20 (train/test)
   set.seed(seed)
   da_split <- rsample::initial_split(da_iris, prop = 0.8, strata = "Species")
@@ -235,12 +241,9 @@ da_experiment <- purrr::map_dfr(1:100, function(seed) {
   metrics <- get_metrics(models = list('ada' = mod_ada, 'pl' = mod_pl,
                                        'lmq' = mod_lmq, 'mlp' = mod_mlp),
                          da_test = da_test, truth = da_test[, "Species"])
-
-  time <- tictoc::toc(quiet = TRUE) # time elapsed finish
-  message(glue::glue('Seed {seed} completada em {time$toc-time$tic}s com sucesso!!!'))
-
   return(metrics)
-}, .id = 'seed')
+}, .id = 'seed', .progress = TRUE,
+.options = furrr::furrr_options(seed = TRUE, globals = globals))
 
 # write da_metrics in a .csv file
 fs::dir_create('data')
