@@ -11,6 +11,7 @@ adaline <- function(formula, data, epochs = 500, lr = 0.05) {
   colnames(truth) <- stringr::str_remove(colnames(truth), all.vars(formula)[1])
 
   # matrix of weights
+  ## ncol(truth) == n_class
   W <- matrix(rnorm(ncol(truth) * ncol(data)), ncol = ncol(truth))
 
   # double loop
@@ -19,7 +20,7 @@ adaline <- function(formula, data, epochs = 500, lr = 0.05) {
     for(rw in 1:nrow(data)) {
       # data specification and prediction
       X <- model.matrix(formula, data = data[rw,]) # [1 Var1 Var2 ...] (1 x (p+1))
-      Ui <- X %*% W # (1 x (p+1)) * ((p+1) x size) = (1 x size)
+      Ui <- X %*% W # (1 x (p+1)) * ((p+1) x n_class) = (1 x n_class)
       Yi <- 1/(1 + exp(-Ui)) # sigmoid activation
 
       # error quantification
@@ -39,7 +40,7 @@ adaline <- function(formula, data, epochs = 500, lr = 0.05) {
 ### logistic perceptron predict function
 predict.adaline <- function(object, newdata) {
   X <- model.matrix(object$formula, data = newdata) # [1 newdata]
-  Ui <- X %*% object$W
+  Ui <- X %*% object$W # (1 x (p+1)) * ((p+1) x n_class) = (1 x n_class)
   Yi <- 1/(1 + exp(-Ui)) # sigmoid activation
   estimate <- object$labels[max.col(Yi)] # get labels of the largest activation
   return(factor(estimate, levels = object$labels))
@@ -63,7 +64,7 @@ perceptron_log <- function(formula, data, epochs = 500, lr = 0.05, mom = 0.01) {
     for(rw in 1:nrow(data)) {
       # data specification and prediction
       X <- model.matrix(formula, data = data[rw,]) # [1 Var1 Var2 ...] (1 x (p+1))
-      Ui <- X %*% W # (1 x (p+1)) * ((p+1) x size) = (1 x size)
+      Ui <- X %*% W # (1 x (p+1)) * ((p+1) x n_class) = (1 x n_class)
       Yi <- 1/(1 + exp(-Ui)) # sigmoid activation
 
       # error quantification
@@ -87,7 +88,7 @@ perceptron_log <- function(formula, data, epochs = 500, lr = 0.05, mom = 0.01) {
 ### logistic perceptron predict function
 predict.pl <- function(object, newdata) {
   X <- model.matrix(object$formula, data = newdata) # [1 newdata]
-  Ui <- X %*% object$W
+  Ui <- X %*% object$W # (1 x (p+1)) * ((p+1) x n_class) = (1 x n_class)
   Yi <- 1/(1 + exp(-Ui)) # sigmoid activation
   estimate <- object$labels[max.col(Yi)] # get labels of the largest activation
   return(factor(estimate, levels = object$labels))
@@ -122,15 +123,92 @@ predict.lmq <- function(object, newdata) {
   return(factor(estimate, levels = object$labels))
 }
 
+## MLP
+### multilayer perceptron model
+mlp <- function(formula, data, size = 10, epochs = 500, lr = 0.05, mom = 0.01) {
+  ## response in dummy format
+  truth_form <- glue::glue('~ -1 + {all.vars(formula)[1]}')
+  truth <- model.matrix(as.formula(truth_form), data = data)
+  colnames(truth) <- stringr::str_remove(colnames(truth), all.vars(formula)[1])
+
+  # matrix of weights
+  ## input layer
+  W <- matrix(rnorm(size * ncol(data)), ncol = size)
+  W_old <- W
+
+  ## hidden layer
+  H <- matrix(rnorm(ncol(truth) * (size + 1)), ncol = ncol(truth))
+  H_old <- H
+
+  # double loop
+  ## iterating first on rw (rows) and then on ep (epochs)
+  for(ep in 1:epochs) {
+    for(rw in 1:nrow(data)) {
+      # data specification and prediction
+      X <- model.matrix(formula, data = data[rw,]) # [1 Var1 Var2 ...] (1 x (p+1))
+      ## hidden layer
+      Ui <- X %*% W # (1 x (p+1)) * ((p+1) x size) = (1 x size)
+      Zi <- 1/(1 + exp(-Ui)) # sigmoid activation
+      ## output layer
+      Z <- cbind(1, Zi) # [1 Z1 Z2 ...] (1 x (size+1))
+      Uk <- Z %*% H # (1 x (size+1)) * ((size+1) x n_class)
+      Yk <- 1./(1+exp(-Uk)) # sigmoid activation
+
+      # error quantification
+      Ek <- truth[rw,] - Yk
+
+      # local gradients
+      ## output layer
+      Dk <- Yk * (1 - Yk) + 0.01
+      DDk <- Ek * Dk
+      ## hidden layer
+      Di <- Zi * (1 - Zi) + 0.01
+      DDi <- Di * DDk %*% t(H[-1,])
+
+      # learning phase
+      ## output layer
+      H_aux <- H
+      H <- H + lr*t(Z)%*%DDk + mom*(H - H_old)
+      H_old <- H_aux
+      ## hidden layer
+      W_aux <- W
+      W <- W + 2*lr*t(X)%*%DDi + mom*(W - W_old)
+      W_old <- W_aux
+    }
+  }
+  # converting the function into a model like any other
+  # already implemented in R
+  model <- structure(list(W = W, H = H, formula = formula,
+                          labels = colnames(truth)), class = "mlp")
+
+  return(model)
+}
+
+### mlp predict function
+predict.mlp <- function(object, newdata) {
+  X <- model.matrix(object$formula, data = newdata) # [1 newdata]
+  ## hidden layer
+  Ui <- X %*% object$W # (1 x (p+1)) * ((p+1) x size) = (1 x size)
+  Zi <- 1/(1 + exp(-Ui)) # sigmoid activation
+  ## output layer
+  Z <- cbind(1, Zi) # [1 Z1 Z2 ...] (1 x (size+1))
+  Uk <- Z %*% object$H # (1 x (size+1)) * ((size+1) x n_class)
+  Yk <- 1./(1+exp(-Uk)) # sigmoid activation
+  estimate <- object$labels[max.col(Yk)] # get labels of the largest activation
+  return(factor(estimate, levels = object$labels))
+}
+
 # useful functions -------------------------------------------------------------
 ## get metrics function
 get_metrics <- function(models, da_test, truth) {
   purrr::map_dfr(models, function(model) {
-    estimate <- predict(model, da_test)
-    cm <- table(truth, estimate)
+    estimate <- predict(model, da_test) # prediction
+    cm <- table(truth, estimate) # confusion matrix
+    # get metrics
     accuracy <- sum(diag(cm))/sum(cm)
     precision_by_class <- diag(cm)/colSums(cm)
     precision_by_class[is.nan(precision_by_class)] <- 0 # fix division by zero
+    # store metrics in a dataframe
     metrics <- tibble::tibble(accuracy) |>
       tibble::add_column(dplyr::bind_rows(precision_by_class))
     return(metrics)
@@ -139,7 +217,8 @@ get_metrics <- function(models, da_test, truth) {
 
 # run experiment ---------------------------------------------------------------
 ## loop 100x and assign results to `da_experiment`
-da_experiment <- purrr::map_dfr(1:3, function(seed) {
+da_experiment <- purrr::map_dfr(1:100, function(seed) {
+  tictoc::tic() # time elapsed init
   ## data split 80/20 (train/test)
   set.seed(seed)
   da_split <- rsample::initial_split(da_iris, prop = 0.8, strata = "Species")
@@ -150,12 +229,15 @@ da_experiment <- purrr::map_dfr(1:3, function(seed) {
   mod_ada <- adaline(formula = Species ~ ., data = da_train)
   mod_pl <- perceptron_log(formula = Species ~ ., data = da_train)
   mod_lmq <- lmq(formula = Species ~ ., data = da_train)
-  mod_mlp <- nnet::multinom(formula = Species ~ ., data = da_train, trace = FALSE)
+  mod_mlp <- mlp(formula = Species ~ ., data = da_train)
 
   ## collect metrics in test
   metrics <- get_metrics(models = list('ada' = mod_ada, 'pl' = mod_pl,
                                        'lmq' = mod_lmq, 'mlp' = mod_mlp),
                          da_test = da_test, truth = da_test[, "Species"])
+
+  time <- tictoc::toc(quiet = TRUE) # time elapsed finish
+  message(glue::glue('Seed {seed} completada em {time$toc-time$tic}s com sucesso!!!'))
 
   return(metrics)
 }, .id = 'seed')
