@@ -2,9 +2,9 @@
 da_iris <- iris
 
 # implementing models ----------------------------------------------------------
-## adaline
-### adaline model (without momentum)
-adaline <- function(formula, data, epochs = 500, lr = 0.01) {
+## PL
+### logistic perceptron model
+perceptron_log <- function(formula, data, epochs = 500, lr = 0.05, mom = 0.01) {
   ## response in dummy format
   truth_form <- glue::glue('~ -1 + {all.vars(formula)[1]}')
   truth <- model.matrix(as.formula(truth_form), data = data)
@@ -12,6 +12,7 @@ adaline <- function(formula, data, epochs = 500, lr = 0.01) {
 
   # matrix of weights
   W <- matrix(rnorm(ncol(truth) * ncol(data)), ncol = ncol(truth))
+  W_old <- W
 
   # double loop
   ## iterating first on rw (rows) and then on ep (epochs)
@@ -28,18 +29,20 @@ adaline <- function(formula, data, epochs = 500, lr = 0.01) {
       DDi <- Ei * Di
 
       # learning phase
+      W_aux <- W
       W <- W + lr*t(X)%*%DDi
+      W_old <- W_aux
     }
   }
   # converting the function into a model like any other
   # already implemented in R
   model <- structure(list(W = W, formula = formula,
-                          labels = colnames(truth)), class = "adaline")
+                          labels = colnames(truth)), class = "pl")
 
   return(model)
 }
-### adaline predict function
-predict.adaline <- function(object, newdata) {
+### logistic perceptron predict function
+predict.pl <- function(object, newdata) {
   X <- model.matrix(object$formula, data = newdata) # [1 newdata]
   Ui <- X %*% object$W
   Yi <- 1/(1 + exp(-Ui)) # sigmoid activation
@@ -49,7 +52,7 @@ predict.adaline <- function(object, newdata) {
 
 ## LMQ
 ### LMQ model with tikhonov (lambda)
-LMQ <- function(formula, data, lambda = 1e-3) {
+lmq <- function(formula, data, lambda = 1e-3) {
   # data specification
   X <- model.matrix(formula, data = data)[,-1] # no intercept (bias)
   # response (y) in dummy format
@@ -63,13 +66,13 @@ LMQ <- function(formula, data, lambda = 1e-3) {
   # converting the function into a model like any other
   # already implemented in R
   model <- structure(list(W = W, formula = formula,
-                          labels = colnames(y)), class = "LMQ")
+                          labels = colnames(y)), class = "lmq")
 
   return(model)
 }
 
 ### LMQ predict function
-predict.LMQ <- function(object, newdata) {
+predict.lmq <- function(object, newdata) {
   X <- model.matrix(object$formula, data = newdata)[,-1] # no intercept (bias)
   y_pred <- X %*% object$W # vector of scores for each discriminant
   estimate <- object$labels[max.col(y_pred)] # get labels of the largest score
@@ -101,9 +104,9 @@ da_experiment <- purrr::map_dfr(1:3, function(seed) {
   da_test <- rsample::testing(da_split)
 
   ## apply models in train
-  mod_ada <- adaline(formula = Species ~ ., data = da_train)
-  mod_pl <- nnet::multinom(formula = Species ~ ., data = da_train, trace = FALSE)
-  mod_lmq <- LMQ(formula = Species ~ ., data = da_train)
+  mod_ada <- nnet::multinom(formula = Species ~ ., data = da_train, trace = FALSE)
+  mod_pl <- perceptron_log(formula = Species ~ ., data = da_train)
+  mod_lmq <- lmq(formula = Species ~ ., data = da_train)
   mod_mlp <- nnet::multinom(formula = Species ~ ., data = da_train, trace = FALSE)
 
   ## collect metrics in test
